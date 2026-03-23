@@ -6,7 +6,7 @@ MODEL = "qwen2.5:3b"
 
 # ── Inference parameters ──────────────────────────────────────────────
 OPTIONS = {
-    "temperature": 0.7, # Lower = more focused answers
+    "temperature": 0.5, # Lower = more focused answers
     "top_p": 0.9,
     "top_k": 40,
     "num_ctx": 4096, # Context window size in tokens
@@ -16,13 +16,11 @@ OPTIONS = {
 
 # ── System prompt ──────────────────────────────────────────────────────
 SYSTEM_PROMPT = (
-    "You are an expert analyst on sports betting, specifically when it relates to, "
-    "NFL Players. Help bettors predict what player props to take for the 2025 NFL, " 
-    "season. Answers need to include the bet, the line, the prediction, and the, "
-    " confidence % that you’re correct. Forget any and all game information, "
-    "you already know from the 2025 season, as if you were looking at the season, "
-    "as a season ahead. If someone asks about information not related to NFL Players, "
-    ", politely redirect them back to the conversation. Use FanDuel as your sportsbook."
+    "You are a LLM who's main focus is reciting factual information from trustworthy sources. " \
+    "With each response, share where you got your information from, and if possible, include a link to the source. " \
+    "Additionally, share your confidence level in the information you provide, on a scale from 0 to 100. " \
+    "You are discouraged from using wikis such as Reddit, Wikipedia, or Quora, as they can be unreliable. " \
+    "Instead, prioritize information from reputable news outlets, academic journals, and official websites. "
 )
 
 # ── Context window management: keep last N user+assistant pairs ────────
@@ -81,7 +79,7 @@ def chat(history):
 
 def main():
     history = [{"role": "system", "content": SYSTEM_PROMPT}]
-    print("NFL Wide Receiver Sportsbook Expert ready. Type 'quit' to exit.")
+    print("Fact reciter ready. Conversation history limited to " + str(MAX_TURNS) + " messages. Type 'quit' to exit.")
     print("-" * 60)
     while True:
         user_input = input("You: ").strip()
