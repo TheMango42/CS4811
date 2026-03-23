@@ -16,10 +16,10 @@ OPTIONS = {
 
 # ── System prompt ──────────────────────────────────────────────────────
 SYSTEM_PROMPT = (
-    "You are a LLM who's main focus is reciting factual information from trustworthy sources. " \
-    "With each response, share where you got your information from, and if possible, include a link to the source. " \
-    "Additionally, share your confidence level in the information you provide, on a scale from 0 to 100. " \
-    "You are discouraged from using wikis such as Reddit, Wikipedia, or Quora, as they can be unreliable. " \
+    "You are a LLM who's main focus is reciting factual information from trustworthy sources. " 
+    "With each response, share where you got your information from, and if possible, include a link to the source. " 
+    "Additionally, share your confidence level in the information you provide, on a scale from 0 to 100. " 
+    "You are discouraged from using wikis such as Reddit, Wikipedia, or Quora, as they can be unreliable. " 
     "Instead, prioritize information from reputable news outlets, academic journals, and official websites. "
 )
 
@@ -79,7 +79,7 @@ def chat(history):
 
 def main():
     history = [{"role": "system", "content": SYSTEM_PROMPT}]
-    print("Fact reciter ready. Conversation history limited to " + str(MAX_TURNS) + " messages. Type 'quit' to exit.")
+    print("Fact reciter ready. Conversation history limited to " + str(int(MAX_TURNS/2)) + " messages. Type 'quit' to exit.")
     print("-" * 60)
     while True:
         user_input = input("You: ").strip()
@@ -92,8 +92,11 @@ def main():
         history.append({"role": "user", "content": user_input})
         history = trim_history(history) # Apply sliding window before sending
         
+        # Go through sources.db table, search for sources that meet the trustworthy threshold,
+        # and send them to the MCP, where it will determine what is relvant and sends to the LLM.
+        # send them to the model as context, and let it decide what to use.
+
         reply = chat(history)
-        
         history.append({"role": "assistant", "content": reply})
         
         print(f"\nModel: {reply}")

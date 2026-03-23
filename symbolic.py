@@ -30,10 +30,9 @@ def make_simple_rule(trigger_pattern, logic_function, rule_name):
     eng.add_rule(("TRUE", trigger_pattern), internal_rule)
 
 # =========================================================
-# Create mapping for different sorces
+# Create mapping for different sources
 # =========================================================
-print_separator("PART 1: Loading Map")
-
+print_separator("PART 1: Loading Source Facts")
 
 # defining source types
 eng.assert_fact(("isa","news_article","source_type"))
@@ -42,20 +41,25 @@ eng.assert_fact(("isa","blog","source_type"))
 eng.assert_fact(("isa","government","source_type"))
 
 # difine aspects of a good source
-eng.assert_fact(("isa","title","aspect"))
-eng.assert_fact(("isa","author","aspect"))
+eng.assert_fact(("isa","has_author","aspect"))
 eng.assert_fact(("isa","good_url_type","aspect"))
+eng.assert_fact(("isa","has_doi","aspect"))
+eng.assert_fact(("isa",".org","aspect"))
+eng.assert_fact(("isa",".gov","aspect"))
+eng.assert_fact(("isa",".edu","aspect"))
 
 # Define connections (connected)
-eng.assert_fact(("connected","solar_array","battery_bank"))
-eng.assert_fact(("connected","battery_bank","oxygen_gen"))
+eng.assert_fact(("connected","journal_article","has_doi"))
+eng.assert_fact(("connected","good_url_type",".org"))
+eng.assert_fact(("connected","good_url_type",".gov"))
+eng.assert_fact(("connected","good_url_type",".edu"))
 
 print("...Facts loaded.")
 
 # =========================================================
 # Create rules to determine source type
 # =========================================================
-print_separator("PART 2: Defining Physics")
+print_separator("PART 2: Defining Good Source Rules")
 
 # We want a rule: If ?s is connected to ?t, and ?s has high voltage, then ?t has high voltage.
 
