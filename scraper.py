@@ -8,6 +8,7 @@ from dateutil import parser
 from urllib.parse import urlparse
 import re
 from html import unescape
+import sqlite3
 # =========================================================
 # get the set of sources from the LLM
 # =========================================================
@@ -23,7 +24,24 @@ class Article:
     doi: bool = False
     good_source: bool = False
     
+def get_database() -> sqlite3.Cursor:
+    #get the soruces database
+    conn = sqlite3.connect("sources.db")
 
+    #make a cursor to call the database
+    cursor = conn.cursor()
+
+    #create the tables we may need
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS doi (
+                   id INTEGER,
+                   url TEXT PRIMARY KEY,
+                   authors TEXT,
+                   publish_date DATE,
+                   abstract TEXT,
+                   is_good BOOLEAN
+                   )'''
+                   )
 
 def scrape_DOI(data, domain) -> Article:
     """helper function for scrape_article, handles any doi urls"""
@@ -90,7 +108,10 @@ def standardize_date(str: str) -> str | None:
 
 def scrape_article(url: str) -> Article:
     """scrape an article for relevent information for evaluating creadibility"""
-    
+
+    #get the database
+    cursor = get_database()
+
     # --- DOI CASE ---
     #if doi, parse as a JSON file
     if("/doi/" in url or "/doi.org/" in url):
