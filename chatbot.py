@@ -1,8 +1,10 @@
 import requests
 import json
+import sqlite3
 
 OLLAMA_URL = "http://localhost:11434/api/chat"
 MODEL = "qwen2.5:3b"
+DB_PATH = "sources.db"
 
 # ── Inference parameters ──────────────────────────────────────────────
 OPTIONS = {
@@ -16,9 +18,11 @@ OPTIONS = {
 
 # ── System prompt ──────────────────────────────────────────────────────
 SYSTEM_PROMPT = (
-    "You are a LLM who's main focus is reciting factual information from trustworthy sources. " 
+    "You are a LLM who's main focus is reciting factual information from trustworthy sources. "
+    "You MUST ONLY use the provided 'Retrieved sources' to answer the question, which are stoed in a file called 'sources.db'. "
+    "Forget any prior knowledge you have and do not use any information that is not explicitly stated in the retrieved sources. "
+    "If no sources are provided, you MUST respond exactly with: 'I'm sorry, I don't have enough information to answer that question.' "
     "With each response, share where you got your information from, and if possible, include a link to the source. " 
-    "Additionally, share your confidence level in the information you provide, on a scale from 0 to 100. " 
     "You are discouraged from using wikis such as Reddit, Wikipedia, or Quora, as they can be unreliable. " 
     "Instead, prioritize information from reputable news outlets, academic journals, and official websites. "
 )
@@ -77,6 +81,52 @@ def chat(history):
     return "".join(full_reply)
 
 
+def fetch_sources(query, max_results=3):
+    """Return up to `max_results` rows from the `doi` table that match words in `query`.
+    Only return rows where `is_good` is true. Matches are performed against
+    `abstract`, `url`, and `authors` using simple LIKE queries.
+    Returns a list of dicts with keys: url, authors, publish_date, abstract.
+    """
+    if not query:
+        return []
+
+    words = [w.strip() for w in query.split() if w.strip()]
+    if not words:
+        return []
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    # Build WHERE clause: any word matching any of the searchable columns
+    conds = []
+    params = []
+    for w in words:
+        pattern = f"%{w}%"
+        conds.append("(abstract LIKE ? OR url LIKE ? OR authors LIKE ?)")
+        params.extend([pattern, pattern, pattern])
+
+    where = " OR ".join(conds)
+    # Only include rows marked as good in the DB (is_good == 1)
+    sql = f"SELECT url, authors, publish_date, abstract FROM doi WHERE ({where}) AND is_good = 1 ORDER BY publish_date DESC LIMIT ?"
+    params.append(max_results)
+
+    try:
+        cur.execute(sql, params)
+        rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    results = []
+    for r in rows:
+        results.append({
+            "url": r[0],
+            "authors": r[1],
+            "publish_date": r[2],
+            "abstract": r[3],
+        })
+    return results
+
+
 def main():
     history = [{"role": "system", "content": SYSTEM_PROMPT}]
     print("Fact reciter ready. Conversation history limited to " + str(int(MAX_TURNS/2)) + " messages. Type 'quit' to exit.")
@@ -88,18 +138,27 @@ def main():
             break
         if not user_input:
             continue
-       
-        history.append({"role": "user", "content": user_input})
-        history = trim_history(history) # Apply sliding window before sending
         
-        # Go through sources.db table, search for sources that meet the trustworthy threshold,
-        # and send them to the MCP, where it will determine what is relvant and sends to the LLM.
-        # send them to the model as context, and let it decide what to use.
+        # Fetch relevant sources from local SQLite DB and inject them into context
+        sources = fetch_sources(user_input, max_results=3)
+        if sources:
+            # build a concise sources summary to give the model context/citations
+            lines = []
+            for s in sources:
+                abstract_snip = (s["abstract"][:200] + '...') if s.get("abstract") else ""
+                pub = s.get("publish_date") or "unknown"
+                auth = s.get("authors") or "unknown"
+                lines.append(f"- {s.get('url')} ({auth}, {pub}): {abstract_snip}")
+            sources_text = "\n".join(lines)
+            # Add the user's question and the retrieved sources to the conversation
+            history.append({"role": "user", "content": user_input})
+            history.append({"role": "assistant", "content": "Retrieved sources:\n" + sources_text})
+        else:
+            history.append({"role": "user", "content": user_input})
+        history = trim_history(history) # Apply sliding window before sending
 
         reply = chat(history)
         history.append({"role": "assistant", "content": reply})
-        
-        print(f"\nModel: {reply}")
         print("-" * 60)
 
 if __name__ == "__main__":
