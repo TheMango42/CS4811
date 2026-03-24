@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import List, Optional
 import requests
 from bs4 import BeautifulSoup
@@ -16,34 +16,58 @@ import sqlite3
 #store the related atributes to then store in the database
 @dataclass
 class Article:
+    url: str
     authors: List[str]
     domain: Optional[str]
     publish_date: Optional[str]
     abstract: Optional[str]
-    references: List[str] = field(default_factory=list)
+    references: List[str]
     doi: bool = False
     good_source: bool = False
     
-def get_database() -> sqlite3.Cursor:
+def get_database():
     #get the soruces database
     conn = sqlite3.connect("sources.db")
 
     #make a cursor to call the database
     cursor = conn.cursor()
 
-    #create the tables we may need
+    #create the table we need
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS doi (
-                   id INTEGER,
+        CREATE TABLE IF NOT EXISTS sources (
                    url TEXT PRIMARY KEY,
+                   score INTEGER,
                    authors TEXT,
+                   domain TEXT,
                    publish_date DATE,
                    abstract TEXT,
+                   has_doi BOOLEAN,
                    is_good BOOLEAN
                    )'''
                    )
+    conn.commit()
+    conn.close()
 
-def scrape_DOI(data, domain) -> Article:
+def array_to_string(List: List[str]) -> str:
+    result = List[0]
+    for i in range(1, len(List)):
+        result = result + ", " + List[i]
+
+def add_to_database(article: Article):
+    #get the soruces database
+    conn = sqlite3.connect("sources.db")
+
+    #make a cursor to call the database
+    cursor = conn.cursor()
+
+    cursor.execute(f'''
+        INSERT INTO sources (url, authors, domain, publish_date, has_doi, abstract)
+        VALUES("{article.url}", "{array_to_string(article.authors)}", "{article.domain}", "{article.publish_date}", "{article.doi}", "{article.abstract}")'''
+    )
+    conn.commit()
+    conn.close()
+
+def scrape_DOI(data, domain, url) -> Article:
     """helper function for scrape_article, handles any doi urls"""
      # --- Author ---
     authors = []
@@ -82,6 +106,7 @@ def scrape_DOI(data, domain) -> Article:
         abstract = unescape(clean).strip()
 
     return Article(
+        url=url,
         authors=authors,
         domain=domain,
         publish_date=publish_date,
@@ -118,7 +143,6 @@ def scrape_article(url: str) -> Article:
         #get the doi number
         match = re.search(r'10\.\d{4,9}/\S+', url)
         doi = match.group(0) if match else None
-        print(f"{doi}")
         #convert ot crossref to get article
         url_doi = "https://api.crossref.org/works/" + doi
         try:
@@ -126,7 +150,7 @@ def scrape_article(url: str) -> Article:
             response.raise_for_status()
 
             #scrape as a JSON
-            return scrape_DOI(response.json()["message"], urlparse(url).hostname)
+            return scrape_DOI(response.json()["message"], urlparse(url).hostname, url)
         except requests.RequestException: #doi may be custom
             has_doi=True
 
@@ -210,6 +234,7 @@ def scrape_article(url: str) -> Article:
             references.append(href)
 
     return Article(
+        url=url,
         authors=authors,
         domain=urlparse(url).hostname,
         publish_date=publish_date,
@@ -218,7 +243,4 @@ def scrape_article(url: str) -> Article:
         doi=has_doi
     )
 
-
-article = scrape_article("https://dl.acm.org/doi/10.1145/3571730")
-
-print(f"{article}")
+add_to_database(scrape_article("https://dl.acm.org/doi/10.1145/3571730"))
