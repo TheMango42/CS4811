@@ -1,5 +1,7 @@
 ###ignores files that do not need to be pushed###
 #python cache folder
 __pycache__/
+#visual studio files
+.vscode/
 #don't store the db, will be generated on run
 *.db
