@@ -16,6 +16,7 @@ import sqlite3
 #store the related atributes to then store in the database
 @dataclass
 class Article:
+    """container for all the properties of an article, used to then store the article in the database"""
     url: str
     authors: List[str]
     domain: Optional[str]
@@ -25,7 +26,8 @@ class Article:
     doi: bool = False
     good_source: bool = False
     
-def get_database():
+def create_database():
+    """create the table if it has not been made already"""
     #get the soruces database
     conn = sqlite3.connect("sources.db")
 
@@ -49,23 +51,29 @@ def get_database():
     conn.close()
 
 def array_to_string(List: List[str]) -> str:
+    """converts a array of strings into one string as a comma list"""
     result = List[0]
     for i in range(1, len(List)):
         result = result + ", " + List[i]
 
 def add_to_database(article: Article):
+    """opens the database file and adds the article into the sources table within"""
     #get the soruces database
     conn = sqlite3.connect("sources.db")
 
     #make a cursor to call the database
     cursor = conn.cursor()
 
-    cursor.execute(f'''
-        INSERT INTO sources (url, authors, domain, publish_date, has_doi, abstract)
-        VALUES("{article.url}", "{array_to_string(article.authors)}", "{article.domain}", "{article.publish_date}", "{article.doi}", "{article.abstract}")'''
-    )
-    conn.commit()
-    conn.close()
+    #add the article if it doesn't exist
+    try:
+        cursor.execute(f'''
+            INSERT INTO sources (url, authors, domain, publish_date, has_doi, abstract)
+            VALUES("{article.url}", "{array_to_string(article.authors)}", "{article.domain}", "{article.publish_date}", "{article.doi}", "{article.abstract}")'''
+        )
+        conn.commit()
+        conn.close()
+    except(sqlite3.IntegrityError):
+        conn.close() #the url has been added already so we can just close the connection
 
 def scrape_DOI(data, domain, url) -> Article:
     """helper function for scrape_article, handles any doi urls"""
@@ -81,7 +89,7 @@ def scrape_DOI(data, domain, url) -> Article:
     if "issued" in data:
         parts = data["issued"].get("date-parts", [])
         if parts and parts[0]: 
-            y, m, d = (parts[0] + [1, 1, 1])[:3] # get only the dat
+            y, m, d = (parts[0] + [1, 1, 1])[:3] # get only the date
             publish_date = f"{y:04d}-{m:02d}-{d:02d}"
 
     # --- References ---
@@ -124,7 +132,7 @@ def standardize_date(str: str) -> str | None:
     if not match:
         return None
     date_text = match.group(0)
-    try: #convert to a standardised format
+    try: # Convert to the format the database uses
         dt = parser.parse(date_text)
         return dt.date().isoformat()  # YYYY-MM-DD
     except (ValueError, TypeError):
@@ -132,10 +140,10 @@ def standardize_date(str: str) -> str | None:
 
 
 def scrape_article(url: str) -> Article:
-    """scrape an article for relevent information for evaluating creadibility"""
+    """scrape an article for relevent information for evaluating creadibility and save summery/abstract"""
 
-    #get the database
-    cursor = get_database()
+    #make the database if it does not exist
+    create_database()
 
     # --- DOI CASE ---
     #if doi, parse as a JSON file
