@@ -20,8 +20,8 @@ OPTIONS = {
 SYSTEM_PROMPT = (
     "You are a LLM who's main focus is reciting factual information from trustworthy sources. "
     "You MUST ONLY use the provided 'Retrieved sources' to answer the question, which are stoed in a file called 'sources.db'. "
-    "Forget any prior knowledge you have and do not use any information that is not explicitly stated in the retrieved sources. "
-    "If no sources are provided, you MUST respond exactly with: 'I'm sorry, I don't have enough information to answer that question.' "
+    "If no sources provided contain the relevant information, you MUST respond exactly with: 'I'm sorry, I don't have enough information to answer that question.' "
+    "Then tell the user that you will try to answer the question to the best of your ability, but that your answer may be incomplete or inaccurate due to lack of information. "
     "With each response, share where you got your information from, and if possible, include a link to the source. " 
     "You are discouraged from using wikis such as Reddit, Wikipedia, or Quora, as they can be unreliable. " 
     "Instead, prioritize information from reputable news outlets, academic journals, and official websites. "
@@ -82,7 +82,7 @@ def chat(history):
 
 
 def fetch_sources(query, max_results=3):
-    """Return up to `max_results` rows from the `doi` table that match words in `query`.
+    """Return up to `max_results` rows from the `sources` table that match words in `query`.
     Only return rows where `is_good` is true. Matches are performed against
     `abstract`, `url`, and `authors` using simple LIKE queries.
     Returns a list of dicts with keys: url, authors, publish_date, abstract.
@@ -107,7 +107,7 @@ def fetch_sources(query, max_results=3):
 
     where = " OR ".join(conds)
     # Only include rows marked as good in the DB (is_good == 1)
-    sql = f"SELECT url, authors, publish_date, abstract FROM doi WHERE ({where}) AND is_good = 1 ORDER BY publish_date DESC LIMIT ?"
+    sql = f"SELECT url, authors, publish_date, abstract FROM sources WHERE ({where}) AND is_good = 1 ORDER BY publish_date DESC LIMIT ?"
     params.append(max_results)
 
     try:
