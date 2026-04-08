@@ -76,6 +76,26 @@ def add_to_database(article: Article):
     except(sqlite3.IntegrityError):
         conn.close() #the url has been added already so we can just close the connection
 
+def source_in_db(url):
+    """
+    Checks if a URL already exists in the sources table.
+    """
+    # Connect to the database
+    conn = sqlite3.connect("sources.db")
+    cursor = conn.cursor()
+
+    # We use 'EXISTS' or 'SELECT 1' for performance since we don't need the actual data
+    query = "SELECT 1 FROM sources WHERE url = ? LIMIT 1"
+    
+    cursor.execute(query, (url,))
+    result = cursor.fetchone()
+
+    # Close connection
+    conn.close()
+
+    # If result is not None, the URL exists
+    return result is not None
+
 def scrape_DOI(data, domain, url) -> Article:
     """helper function for scrape_article, handles any doi urls"""
      # --- Author ---
