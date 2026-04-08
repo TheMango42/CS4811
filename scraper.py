@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 import re
 from html import unescape
 import sqlite3
+from evaluator import ArticleEvaluator
 # =========================================================
 # get the set of sources from the LLM
 # =========================================================
@@ -18,13 +19,13 @@ import sqlite3
 class Article:
     """container for all the properties of an article, used to then store the article in the database"""
     url: str
+    score: int
     authors: List[str]
     domain: Optional[str]
     publish_date: Optional[str]
     abstract: Optional[str]
     references: List[str]
     doi: bool = False
-    good_source: bool = False
     
 def create_database():
     """create the table if it has not been made already"""
@@ -43,8 +44,7 @@ def create_database():
                    domain TEXT,
                    publish_date DATE,
                    abstract TEXT,
-                   has_doi BOOLEAN,
-                   is_good BOOLEAN
+                   has_doi BOOLEAN
                    )'''
                    )
     conn.commit()
@@ -55,6 +55,7 @@ def array_to_string(List: List[str]) -> str:
     result = List[0]
     for i in range(1, len(List)):
         result = result + ", " + List[i]
+    return result
 
 def add_to_database(article: Article):
     """opens the database file and adds the article into the sources table within"""
@@ -67,8 +68,8 @@ def add_to_database(article: Article):
     #add the article if it doesn't exist
     try:
         cursor.execute(f'''
-            INSERT INTO sources (url, authors, domain, publish_date, has_doi, abstract)
-            VALUES("{article.url}", "{array_to_string(article.authors)}", "{article.domain}", "{article.publish_date}", "{article.doi}", "{article.abstract}")'''
+            INSERT INTO sources (url, score, authors, domain, publish_date, has_doi, abstract)
+            VALUES("{article.url}", "{article.score}", "{array_to_string(article.authors)}", "{article.domain}", "{article.publish_date}", "{article.doi}", "{article.abstract}")'''
         )
         conn.commit()
         conn.close()
@@ -78,12 +79,11 @@ def add_to_database(article: Article):
 def scrape_DOI(data, domain, url) -> Article:
     """helper function for scrape_article, handles any doi urls"""
      # --- Author ---
-    authors = []
-    for a in data.get("author", []):
-        name = f"{a.get('given', '')} {a.get('family', '')}".strip() # get only the name
-        if name:
-            authors.append(name)
-
+    # Extract and format names in one go
+    authors: List[str] = [
+    name for a in data.get("author", [])
+    if (name := f"{a.get('given', '')} {a.get('family', '')}".strip() or a.get('name', '').strip())
+    ]
     # --- Publish Date ---
     publish_date = None
     if "issued" in data:
@@ -110,11 +110,11 @@ def scrape_DOI(data, domain, url) -> Article:
         # "<jats:p>This is the abstract...</jats:p>"
         
         # Remove XML/HTML tags
-        clean = re.sub(r"<.*?>", "", raw_abstract)
-        abstract = unescape(clean).strip()
+        abstract = unescape(re.sub(r"<.*?>", "", raw_abstract)).strip()
 
     return Article(
         url=url,
+        score=0,
         authors=authors,
         domain=domain,
         publish_date=publish_date,
@@ -158,7 +158,12 @@ def scrape_article(url: str) -> Article:
             response.raise_for_status()
 
             #scrape as a JSON
-            return scrape_DOI(response.json()["message"], urlparse(url).hostname, url)
+            article = scrape_DOI(response.json()["message"], urlparse(url).hostname, url)
+
+            # --- evaluate the article ---
+            ArticleEvaluator().evaluate(article)
+            return article
+
         except requests.RequestException: #doi may be custom
             has_doi=True
 
@@ -185,7 +190,7 @@ def scrape_article(url: str) -> Article:
         finally:
             driver.quit()
 
-    #sometimes DOI is in the webpage and not the url, check before tyring non-doi referecning
+    #sometimes DOI is in the webpage and not the url, check before tring non-doi referecning
     doi_tag = soup.select_one('td.tablecell a[href*="doi.org"]')
     doi = doi_tag['href'] if doi_tag else None
     has_doi = False
@@ -240,9 +245,11 @@ def scrape_article(url: str) -> Article:
         href = a["href"]
         if "reference" in a.get_text().lower():
             references.append(href)
-
-    return Article(
+    
+    # --- create article ---
+    article = Article(
         url=url,
+        score=0,
         authors=authors,
         domain=urlparse(url).hostname,
         publish_date=publish_date,
@@ -250,5 +257,8 @@ def scrape_article(url: str) -> Article:
         abstract="",
         doi=has_doi
     )
+    # --- evaluate the article ---
+    ArticleEvaluator().evaluate(article)
+    return article
 
 add_to_database(scrape_article("https://dl.acm.org/doi/10.1145/3571730"))

@@ -21,22 +21,25 @@ class Polarity(Enum):
 
 #task 1.1
 class Node:
-    def __init__(self, datum):
+    def __init__(self, datum, node_id):  # Added node_id here
         self.datum = datum
+        self.id = node_id        # Initialize the ID
+        
         # State: TRUE, FALSE, or UNKNOWN
         self.value = Polarity.UNKNOWN
+        self.label = Polarity.UNKNOWN # Added label to match your LTRE usage
         
-        # ALL valid justifications
         self.justifications = [] 
-        
-        # The single justification currently 
-        # providing Well-Founded Support
         self.support = None
-        
-        # Clauses this node participates in
         self.clauses = []
+        
+        # Added these to support the LTRE logic in your code:
+        self.assumptions = set()
+        self.consequences = []
+        self.supporting_justification = None
 
     def __repr__(self):
+        # Note: Changed self.label.name to self.value.name or self.label.name
         return f"<Node:{self.id} {self.datum} ({self.label.name})>"
 
 class Clause: 
@@ -128,12 +131,12 @@ class CLTMS:
         unknowns = []
         
         for node in clause.positives:
-            if node.value == TRUE: return "SATISFIED"
-            if node.value == UNKNOWN: unknowns.append((node, TRUE))
+            if node.value == Polarity.TRUE: return "SATISFIED"
+            if node.value == Polarity.UNKNOWN: unknowns.append((node, Polarity.TRUE))
             
         for node in clause.negatives:
-            if node.value == FALSE: return "SATISFIED"
-            if node.value == UNKNOWN: unknowns.append((node, FALSE))
+            if node.value == Polarity.FALSE: return "SATISFIED"
+            if node.value == Polarity.UNKNOWN: unknowns.append((node, Polarity.FALSE))
             
         if len(unknowns) == 0:
             return "VIOLATED" # Contradiction!
