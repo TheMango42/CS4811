@@ -10,6 +10,7 @@ import re
 from html import unescape
 import sqlite3
 from evaluator import ArticleEvaluator
+from newspaper import Article as NewsArticle # Avoid collision with your dataclass
 # =========================================================
 # get the set of sources from the LLM
 # =========================================================
@@ -67,14 +68,25 @@ def add_to_database(article: Article):
 
     #add the article if it doesn't exist
     try:
-        cursor.execute(f'''
+        # Use ? placeholders to safely inject text (like abstracts with quotes)
+        query = '''
             INSERT INTO sources (url, score, authors, domain, publish_date, has_doi, abstract)
-            VALUES("{article.url}", "{article.score}", "{array_to_string(article.authors)}", "{article.domain}", "{article.publish_date}", "{article.doi}", "{article.abstract}")'''
-        )
+            VALUES (?, ?, ?, ?, ?, ?, ?)'''
+        
+        cursor.execute(query, (
+            article.url, 
+            article.score, 
+            array_to_string(article.authors) if article.authors else "", 
+            article.domain, 
+            article.publish_date, 
+            article.doi, 
+            article.abstract
+        ))
         conn.commit()
+    except sqlite3.IntegrityError:
+        pass # URL already exists
+    finally:
         conn.close()
-    except(sqlite3.IntegrityError):
-        conn.close() #the url has been added already so we can just close the connection
 
 def source_in_db(url):
     """
@@ -161,9 +173,16 @@ def standardize_date(str: str) -> str | None:
 
 def scrape_article(url: str) -> Article:
     """scrape an article for relevent information for evaluating creadibility and save summery/abstract"""
-
+    domain = urlparse(url).hostname
     #make the database if it does not exist
     create_database()
+
+    # Define news outlets to trigger Newspaper4k
+    news_domains = [
+        "cnn.com", "bbc.co.uk", "nytimes.com", "reuters.com", "apnews.com", 
+        "abcnews.go.com", "theguardian.com", "aljazeera.com", "forbes.com", "wsj.com"
+    ]
+    is_news_outlet = any(nd in domain for nd in news_domains)
 
     # --- DOI CASE ---
     #if doi, parse as a JSON file
@@ -186,6 +205,38 @@ def scrape_article(url: str) -> Article:
 
         except requests.RequestException: #doi may be custom
             has_doi=True
+
+    # --- NEWS OUTLET CASE ---
+    if is_news_outlet:
+        try:
+            #use Newspaper4k to generate summery of article
+            n_article = NewsArticle(url)
+            n_article.download()
+            n_article.parse()
+            n_article.nlp() # Required to populate n_article.summary
+            
+            #create article
+            article = Article(
+                url=url,
+                score=0,
+                authors=n_article.authors,
+                domain=domain,
+                publish_date=n_article.publish_date.strftime("%Y-%m-%d") if n_article.publish_date else None,
+                references=[], # Newspaper4k doesn't extract links well; handled in fallback
+                abstract=n_article.summary,
+                doi=False
+            )
+            
+            # Use BS4 logic just to grab references since n4k lacks them
+            response = requests.get(url, timeout=10)
+            soup = BeautifulSoup(response.text, 'html.parser')
+            article.references = [a["href"] for a in soup.find_all("a", href=True) if "reference" in a.get_text().lower()]
+            
+            # --- evaluate the article ---
+            ArticleEvaluator().evaluate(article)
+            return article
+        except Exception as e:
+            print(f"Newspaper4k failed, falling back to manual scrape: {e}")
 
     # --- Create Scraper ---
     try:
@@ -271,7 +322,7 @@ def scrape_article(url: str) -> Article:
         url=url,
         score=0,
         authors=authors,
-        domain=urlparse(url).hostname,
+        domain=domain,
         publish_date=publish_date,
         references=references,
         abstract="",
@@ -281,4 +332,4 @@ def scrape_article(url: str) -> Article:
     ArticleEvaluator().evaluate(article)
     return article
 
-add_to_database(scrape_article("https://dl.acm.org/doi/10.1145/3571730"))
+add_to_database(scrape_article("https://www.cnn.com/2026/04/10/politics/kamala-harris-2028-presidential-election"))
